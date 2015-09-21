@@ -8,26 +8,6 @@
 // Description : 2D Convolution in CUDA
 //============================================================================
 
-/************************************************/
-// Kernel Size	|	Min Trans.	|	Max Trans.	//
-//		3		|	 293764		|	 293764		//
-//		5		|	 327184		|	 327184		//
-//		7		|	 362404		|	 362404		//
-//		9		|	 399424		|	 399424		//
-//		11		|	 438244		|	 438244		//
-//		13		|	 478864		|	 478864		//
-//		15		|	 521284		|	 521284		//
-//		17		|	 565504		|	 565504		//
-//		19		|	 611524		|	 611524		//
-//		21		|	 659344		|	 659344		//
-//		23		|	 708964		|	 708964		//
-//		25		|	 760384		|    760384		//
-//		27		|	 813604		|	 813604		//
-//		29		|	 868624		|	 868624		//
-//		31		|	 925444		|    925444	 	//
-/************************************************/
-
-
 #include <iostream>
 #include <fstream>
 #include <cassert>
@@ -72,88 +52,69 @@ __global__ void convolutionGPU(int* inputImage, int* outputImage, int imageWidth
 	int y = threadIdx.y + blockIdx.y*blockDim.y;
 	
 	
-	//Boundary x=0 y=0 copies upper apron
-	if(threadIdx.x==0 && threadIdx.y==0){
-		if(blockIdx.y==0){
-			for(int row=0; row<kRadius ; row++){
-				for(int col=0; col<TILE_WIDTH+kernelSize-1; col++){
-					sharedImageData[row*(TILE_WIDTH+kernelSize-1)+col] = 0;
-				}
-			}
+	//Let each thread write to four locations in shared memory
+	int xUleft = x - kRadius;
+	int yUleft = y - kRadius;
+	
+	int xLleft = x - kRadius;
+	int yLleft = y + kRadius;
+	
+	int xURight = x + kRadius;
+	int yURight = y - kRadius;
+	
+	int xLRight = x + kRadius;
+	int yLRight = y + kRadius;
+	
+	
+	if(xUleft >= 0 && yUleft >= 0){
+		sharedImageData[threadIdx.x + ((TILE_WIDTH + kernelSize-1)*threadIdx.y)] = inputImage[threadDataLoc - kRadius - (imageWidth*kRadius)];
+		if(blockIdx.x == 0 && blockIdx.y==0 && threadIdx.x ==1 && threadIdx.y ==1){
+			printf("%d",sharedImageData[threadIdx.x + ((TILE_WIDTH + kernelSize-1)*threadIdx.y)] );
 		}
+	}
+	else{
+		sharedImageData[threadIdx.x + ((TILE_WIDTH + kernelSize-1)*threadIdx.y)] = 0;
+	}
 		
-		else{
-			for(int row=0; row<kRadius ; row++){
-				for(int col=0; col<TILE_WIDTH+kernelSize-1; col++){
-					if(blockIdx.x==0 && col < kRadius){
-						sharedImageData[row*(TILE_WIDTH+kernelSize-1)+col] =0;
-					}
-					else if(blockIdx.x==gridDim.x-1 && col>TILE_WIDTH+kRadius-1){
-						sharedImageData[row*(TILE_WIDTH+kernelSize-1)+col] =0;
-					}
-					else{
-						sharedImageData[row*(TILE_WIDTH+kernelSize-1)+col] = inputImage[threadDataLoc-kRadius*imageWidth - kRadius + col + row*imageWidth];
-					}
-					
-				}
-			}
-		}
-		
+	
+	if(xLleft >= 0 && (yLleft <= (imageWidth -1))){
+		sharedImageData[threadIdx.x + ((TILE_WIDTH+kernelSize-1)*(threadIdx.y +kRadius))] = inputImage[threadDataLoc - kRadius + (imageWidth*kRadius)];
+	}
+	else{
+		sharedImageData[threadIdx.x + ((TILE_WIDTH+kernelSize-1)*(threadIdx.y + kRadius))] = 0;
+	}	
+	
+	if(xURight <= (imageWidth -1) && yURight >= 0){
+		sharedImageData[threadIdx.x + kRadius+ ((TILE_WIDTH+kernelSize-1)*threadIdx.y)] = inputImage[threadDataLoc + kRadius - (imageWidth*kRadius)];
+	}
+	else{
+		sharedImageData[threadIdx.x + kRadius+ ((TILE_WIDTH+kernelSize-1)*threadIdx.y)] = 0;
 	}
 	
-	//Boundary threadID x=0, y=blockDim-1 copies lower apron
-	else if(threadIdx.x==0 && threadIdx.y==blockDim.y-1){
-		int starting_index = (TILE_WIDTH + kRadius)*(TILE_WIDTH+kernelSize-1);
-		if(blockIdx.y == gridDim.y-1){
-			for(int row=0; row<kRadius ; row++){
-				for(int col=0; col<TILE_WIDTH+kernelSize-1; col++){
-					sharedImageData[starting_index + row*(TILE_WIDTH+kernelSize-1)+col] = 0;
-				}
-			}
-		}
-		else{
-			for(int row=0; row<kRadius ; row++){
-				for(int col=0; col<TILE_WIDTH+kernelSize-1; col++){
-					if(blockIdx.x==0 && col < kRadius){
-						sharedImageData[starting_index + row*(TILE_WIDTH+kernelSize-1)+col] =0;
-					}
-					else if(blockIdx.x==gridDim.x-1 && col>TILE_WIDTH+kRadius-1){
-						sharedImageData[starting_index + row*(TILE_WIDTH+kernelSize-1)+col] =0;
-					}
-					else{
-						sharedImageData[starting_index + row*(TILE_WIDTH+kernelSize-1)+col] = inputImage[threadDataLoc + imageWidth -kRadius + col + row*imageWidth];
-					}					
-				}
-			}
-		}
-		
+	
+	if((xLRight  <= (imageWidth -1)) && (yLRight <= (imageWidth -1))){
+		sharedImageData[threadIdx.x + kRadius + ((TILE_WIDTH+kernelSize-1)*(threadIdx.y + kRadius))] = inputImage[threadDataLoc + kRadius + (imageWidth*kRadius)];
+	}
+	else{
+		sharedImageData[threadIdx.x + kRadius + ((TILE_WIDTH+kernelSize-1)*(threadIdx.y + kRadius))] = 0;
 	}
 	
-	//Side apron and image data by thread ID x=0
-	if(threadIdx.x==0){
-		int row = threadIdx.y + kRadius;
-		for(int col =0 ; col <TILE_WIDTH +kernelSize -1; col++){
-			if(col < kRadius && blockIdx.x==0){
-				sharedImageData[row*(TILE_WIDTH+kernelSize-1)+col] = 0;
-			}
-			else if(col > (TILE_WIDTH + kRadius -1) && blockIdx.x==gridDim.x-1){
-				sharedImageData[row*(TILE_WIDTH+kernelSize-1)+col] = 0;
-			}
-			else{
-				sharedImageData[row*(TILE_WIDTH+kernelSize-1)+col] = inputImage[threadDataLoc+col-kRadius];
-			}
-		}
+	if(blockIdx.x == 0 && blockIdx.y==0 && threadIdx.x ==1 && threadIdx.y ==1){
+		printf("%d,%d,%d,%d\n",sharedImageData[threadIdx.x + ((TILE_WIDTH + kernelSize-1)*threadIdx.y)], sharedImageData[threadIdx.x + ((TILE_WIDTH+kernelSize-1)*(threadIdx.y +kRadius))], sharedImageData[threadIdx.x + kRadius+ ((TILE_WIDTH+kernelSize-1)*threadIdx.y)], sharedImageData[threadIdx.x + kRadius + ((TILE_WIDTH+kernelSize-1)*(threadIdx.y + kRadius))]);
+		printf("%d\n",threadDataLoc);
 	}
 	
 	__syncthreads();
 
-	
+	/*
 	int value = 0;
 	for (int kRow = -kRadius; kRow <= kRadius; kRow++)
-		for (int kCol = -kRadius; kCol <= kRadius; kCol++){
-			value += sharedImageData[(threadIdx.x+kRadius) + kCol+ (threadIdx.y + kRadius + kRow)*(TILE_WIDTH+kernelSize-1)] * gpuKernel[(kRadius + kRow)*kernelSize + kRadius + kCol];
-		}
+		for (int kCol = -kRadius; kCol <= kRadius; kCol++)
+			value += sharedImageData[(threadIdx.x+kRadius) + kCol+ (threadIdx.y + kRadius + kRow)*blockDim.x] * gpuKernel[(kRadius + kRow)*kernelSize + kRadius + kCol];
 	outputImage[threadDataLoc] = value/totalVal;
+	*/
+	
+	outputImage[threadDataLoc] = sharedImageData[threadIdx.x + kRadius + (threadIdx.y+kRadius)*(TILE_WIDTH+kernelSize-1)];
 }
 
 

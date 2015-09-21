@@ -1,0 +1,8 @@
+==10853== NVPROF is profiling process 10853, command: ./conv 3 image.pgm
+==10853== Profiling application: ./conv 3 image.pgm
+==10853== Profiling result:
+==10853== Metric result:
+Invocations                               Metric Name                        Metric Description         Min         Max         Avg
+Device "Tesla K20Xm (5)"
+	Kernel: convolutionGPU(int*, int*, int, int, int)
+          1                          gld_transactions                  Global Load Transactions      293764      293764      293764
